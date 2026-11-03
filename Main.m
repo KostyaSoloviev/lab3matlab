@@ -122,51 +122,49 @@ function Main(FirstParamsNum, Step4ParamsNum, LogLanguage)
         end
 
 end
+
 function Objs = LoopFun(inObjs, Ruler, WorkerNum)
 % Цикл для одного набора параметров
-
-    % Хотя все объекты в модели типа handle, т.е. фактически это указатели,
-    % тем не менее, для корректной работы parfor нужо делать явное
-    % переприсвоение результатов на выход (https://www.mathworks.com/help/
-    % distcomp/objects-and-handles-in-parfor-loops.html)
-        Objs = inObjs;
+    Objs = inObjs;
 
     % Цикл по количеству кадров
         for k = 1:Ruler.OneWorkerNumOneIterFrames(WorkerNum)
             % Передатчик
-                % Генерирование полезных данных
-                    Frame.TxData       = Objs.Source.Step();
-                % Кодирование кодом, исправляющим ошибки
-                    Frame.TxEncData    = Objs.Encoder.StepTx(Frame.TxData);
-                % Перемешивание полезных данных
+                % Генерирование MPEG-TS и формирование скремблированного BBFRAME
+                    [Frame.TxBBFrame, Frame.TxData] = Objs.Source.StepTx();
+                % Каскадное кодирование BCH + LDPC
+                    Frame.TxEncData    = Objs.Encoder.StepTx(Frame.TxBBFrame);
+                % Битовое перемежение
                     Frame.TxIntData    = Objs.Interleaver.StepTx( ...
                         Frame.TxEncData);
-                % Отображение на модуляционные символы
+                % Отображение на модуляционные символы (XFECFRAME)
                     Frame.TxModSymbols = Objs.Mapper.StepTx( ...
                         Frame.TxIntData);
-                % Генерирование сигнала
+                % Формирование PLFRAME и RRC-фильтрация
                     Frame.TxSignal     = Objs.Sig.StepTx( ...
                         Frame.TxModSymbols);
 
-            % Канал
-                [Frame.RxSignal, InstChannelParams] = Objs.Channel.Step(...
+            % Канал (h2dB интерпретируется как Es/N0 в дБ)
+                [Frame.RxSignal, InstChannelParams] = Objs.Channel.Step( ...
                     Frame.TxSignal, Ruler.h2dB);
 
             % Приёмник
-                % Обработка принятого сигнала - вычисление модуляционных
-                % символов
-                    Frame.RxModSymbols = Objs.Sig.StepRx(Frame.RxSignal);
-                % Демодуляция
+                % RRC-фильтрация, декодирование PLHEADER, PL-дескремблирование и удаление пилотов
+                    [Frame.RxModSymbols, ~] = Objs.Sig.StepRx(Frame.RxSignal);
+                % Демодуляция (вычисление LLR)
                     Frame.RxIntData    = Objs.Mapper.StepRx( ...
                         Frame.RxModSymbols, InstChannelParams);
-                % Обратное перемешивание
+                % Битовое деперемежение
                     Frame.RxEncData    = Objs.Interleaver.StepRx( ...
                         Frame.RxIntData);
-                % Декодирование кодом, исправляющим ошибки
-                    Frame.RxData       = Objs.Encoder.StepRx( ...
+                % Каскадное декодирование LDPC + BCH
+                    Frame.RxBBFrame    = Objs.Encoder.StepRx( ...
                         Frame.RxEncData);
+                % BB-дескремблирование, разбор BBHEADER, проверка CRC-8 и сборка MPEG-TS
+                    [Frame.RxData, Frame.PacketErrFlags] = Objs.Source.StepRx( ...
+                        Frame.RxBBFrame);
 
-            % Накопление статистики по текущему Frame
+            % Накопление статистики по текущему кадру и пакетам MPEG-TS
                 Objs.Stat.Step(Frame);
         end
 end
