@@ -1,100 +1,67 @@
 function DrawBERAndFER(DirName)
-%
-% Функция прорисовки кривых вероятности битовой и кадровой ошибок
+% Функция прорисовки кривых BER и PER (Packet Error Rate) для Варианта 2 (QPSK 3/4)
 
-    % Директория, из которой будут взяты результаты
-        if nargin == 0
-            DirName = 'Results';
-        end
+    if nargin == 0
+        DirName = 'Results';
+    end
 
-    % Получим информацию о содержимом директории
-        Listing = dir(DirName);
-
-    % Инициализируем cell-массив для хранения имён файлов, из которых потом
-    % сделаем легенду
-        Names = cell(0);
-
-    % Цикл по всем файлам директории
-        for k = 1:length(Listing)
-            % Надо проверять, чтобы рассматриваемый элемент был файлом и
-            % имел расширение mat
-                if ~Listing(k).isdir
-                    FName = Listing(k).name;
-                    if length(FName) > 4
-                        if isequal(FName(end-3:end), '.mat')
-                            % Добавим имя файла к списку
-                                Names{end+1} = FName(1:end-4); %#ok<AGROW>
-                        end
-                    end
-                end
-        end
-
-        if isempty(Names)
-            error('Не найдены файлы с результатами!');
-        end
-
-    % Прорисовка BER и FER
-        % Создадим два полотна и оси
-            f  = cell(2, 1);
-            ax = cell(2, 1);
-            for k = 1:2
-                f{k} = figure;
-                    ax{k} = axes;
+    Listing = dir(DirName);
+    Names = cell(0);
+    for k = 1:length(Listing)
+        if ~Listing(k).isdir
+            FName = Listing(k).name;
+            if length(FName) > 4 && isequal(FName(end-3:end), '.mat')
+                Names{end+1} = FName(1:end-4); %#ok<AGROW>
             end
-
-        % Цикл по всем уже известным файлам
-            for k = 1:length(Names)
-                % Загрузка результатов
-                    load([DirName, '\', Names{k}, '.mat'], 'Res');
-                % Прорисовка без затирания старых рисунков    
-                    figure(f{1});
-                        hold on;
-                        plot(Res.h2dBs, Res.NumErBits ./ Res.NumTrBits, ...
-                            'LineWidth', 1, 'MarkerSize', 8, ...
-                            'Marker', '.');
-                    figure(f{2});
-                        hold on;
-                        plot(Res.h2dBs, Res.NumErFrames ./ ...
-                            Res.NumTrFrames, 'LineWidth', 1, ...
-                            'MarkerSize', 8, 'Marker', '.');
-            end
-
-        for k = 1:2
-            figure(f{k});
-
-            % Добавим сетку
-                grid on;
-
-            % Сделаем традиционный масштаб по оси ординат
-                set(ax{k}, 'YScale', 'log');
-
-            % Подпишем рисунок и ось абсцисс
-                if k == 1
-                    title('BER');
-                else
-                    title('FER');
-                end
-                xlabel('{\ith}^2 (dB)');
-
-            % Прорисовка стандартных BER
-            % В данном случае для QAM4 и QAM16 до вероятности 1e-6
-                if k == 1
-                    AddNames = cell(0);
-                    h2dB = 0:0.1:10.5;
-                    BER = berawgn(h2dB, 'qam', 4);
-                    plot(h2dB, BER);
-                    AddNames{end+1} = 'QPSK'; %#ok<AGROW>
-
-                    h2dB = 0:0.1:14.4;
-                    BER = berawgn(h2dB, 'qam', 16);
-                    plot(h2dB, BER);
-                    AddNames{end+1} = '16-QAM'; %#ok<AGROW>
-                end
-
-            % Добавим легенду
-                if k == 1
-                    legend([Names, AddNames], 'Interpreter', 'none');
-                else
-                    legend(Names, 'Interpreter', 'none');
-                end
         end
+    end
+
+    if isempty(Names)
+        error('Не найдены файлы с результатами!');
+    end
+
+    f  = cell(2, 1);
+    ax = cell(2, 1);
+    for k = 1:2
+        f{k} = figure('Color', 'w');
+        ax{k} = axes;
+    end
+
+    for k = 1:length(Names)
+        load(fullfile(DirName, [Names{k}, '.mat']), 'Res');
+        figure(f{1});
+            hold on;
+            plot(Res.h2dBs, Res.NumErBits ./ Res.NumTrBits, ...
+                '-o', 'LineWidth', 1.5, 'MarkerSize', 6);
+        figure(f{2});
+            hold on;
+            plot(Res.h2dBs, Res.NumErFrames ./ Res.NumTrFrames, ...
+                '-o', 'LineWidth', 1.5, 'MarkerSize', 6);
+    end
+
+    % Референсная кривая DVB-S2 для Варианта 2: QPSK, R_LDPC = 3/4 (слайд 21)
+    refEsN0_QPSK_3_4 = [3.75,  3.85,   3.91,   3.95,    4.00,   4.03];
+    refPER_QPSK_3_4  = [1e-1,  2.5e-2, 2.8e-3, 4.2e-5,  3.0e-6, 3.0e-7];
+
+    figure(f{1});
+        grid on;
+        set(ax{1}, 'YScale', 'log');
+        title('BER (QPSK, R_{LDPC} = 3/4, \beta = 0.20, pilots = on)');
+        xlabel('{\itE_s}/{\itN}_0 (dB)');
+        ylabel('Bit Error Rate (BER)');
+        legend(Names, 'Interpreter', 'none', 'Location', 'southwest');
+
+    figure(f{2});
+        hold on;
+        plot(refEsN0_QPSK_3_4, refPER_QPSK_3_4, '--ks', ...
+            'LineWidth', 1.5, 'MarkerFaceColor', 'k', 'MarkerSize', 6);
+        grid on;
+        set(ax{2}, 'YScale', 'log');
+        ylim([1e-7, 1]);
+        xlim([3.0, 4.5]);
+        title('PER (Вариант 2: QPSK, R_{LDPC} = 3/4, \beta = 0.20, pilots = on)');
+        xlabel('{\itE_s}/{\itN}_0 (dB)');
+        ylabel('Packet Error Rate (PER)');
+        legend([Names, {'Референс DVB-S2 (QPSK 3/4)'}], ...
+            'Interpreter', 'none', 'Location', 'southwest');
+end

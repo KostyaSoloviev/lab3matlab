@@ -1,57 +1,29 @@
 classdef ClassChannel < handle
-    properties (SetAccess = private) % Переменные из параметров
-        % Нужно ли пропускать сигнал через канал
-            isTransparent;
-        % Переменная управления языком вывода информации для пользователя
-            LogLanguage;
-    end
-    properties (SetAccess = private) % Вычисляемые переменные
-        % Значение средней мощности модуляционного символа
-            Ps;
-        % Значение средней мощности модуляционного бита
-            Pb;
-        % Значение средней мощности информационного бита
-            Pbd;
+    properties (SetAccess = private)
+        isTransparent;
+        LogLanguage;
+        Es; % Средняя энергия модуляционного символа
     end
     methods
         function obj = ClassChannel(Params, Objs, LogLanguage)
-        % Конструктор
-            % Выделим поля Params, необходимые для инициализации
-                Channel = Params.Channel;
-            % Инициализация значений переменных из параметров
-                obj.isTransparent = Channel.isTransparent;
-            % Переменная LogLanguage
-                obj.LogLanguage = LogLanguage;
-
-            % Определим среднюю мощность модуляционного символа
-                Const = Objs.Mapper.Constellation;
-                obj.Ps = mean((abs(Const)).^2);
-
-            % Определим среднюю мощность модуляционного бита
-                obj.Pb = obj.Ps / Objs.Mapper.log2M;
-
-            % Определим среднюю мощность информационного бита (энергия,
-            % приходящаяся на информационный бит, оказывается больше, так
-            % как используются проверочные биты)
-                obj.Pbd = obj.Pb;
-                % Когда и если будет реализован класс кодирования, то здесь
-                % должно будет быть
-                % obj.Pbd = obj.Pb / Objs.Encoder.Rate;
+            obj.isTransparent = Params.Channel.isTransparent;
+            obj.LogLanguage   = LogLanguage;
+            Const  = Objs.Mapper.Constellation;
+            obj.Es = mean(abs(Const).^2); % Для созвездий DVB-S2 равна 1
         end
-        function [OutData, InstChannelParams] = Step(obj, InData, h2dB)
+
+        function [OutData, InstChannelParams] = Step(obj, InData, EsN0dB)
             if obj.isTransparent
                 OutData = InData;
-                InstChannelParams.Variance = 1;
-                return
+                InstChannelParams.Variance = 1e-10;
+                return;
             end
-
-            % Сформируем АБГШ
-                Sigma = sqrt(obj.Pbd * 10^(-h2dB/10) / 2);
-                InstChannelParams.Variance = 2*Sigma^2;
-                Noise = randn(length(InData), 2) * [1; 1i] * Sigma;
-
-            % Добавим его к сигналу
-                OutData = InData + Noise;
+            % Спектральная плотность мощности комплексного шума N0 = Es * 10^(-EsN0dB/10)
+            N0 = obj.Es * 10^(-EsN0dB / 10);
+            Sigma = sqrt(N0 / 2);
+            InstChannelParams.Variance = N0;
+            Noise = Sigma * (randn(size(InData)) + 1i * randn(size(InData)));
+            OutData = InData + Noise;
         end
     end
 end
